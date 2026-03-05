@@ -21,6 +21,7 @@ export interface Settings {
   customHeight: string;
   lockRatio: boolean;
   scalePercent: number;
+  videoFps: number;
 }
 
 export interface ToastItem {

@@ -1,20 +1,20 @@
-export const DEFAULT_PROMPT = `Remove the background from this image.
+export const DEFAULT_PROMPT = `移除此图像的背景。
 
-CRITICAL - READ CAREFULLY:
+非常重要 - 请仔细阅读：
 
-1. Output a PNG image with REAL ALPHA TRANSPARENCY (not a checkerboard pattern!)
-2. Do NOT draw a checkerboard/checkered pattern as background
-3. Do NOT draw gray and white squares as background  
-4. The background must be ACTUAL TRANSPARENT PIXELS (alpha = 0), not a visual pattern
-5. Keep the subject EXACTLY as it is - do not modify, redraw, or enhance anything
-6. Output dimensions must match input dimensions exactly
-7. Preserve every single pixel of the subject without any changes
+1. 输出带有真实 Alpha 透明度的 PNG 图像（不是棋盘格图案！）
+2. 不要将棋盘格/方格图案绘制为背景
+3. 不要将灰白相间的方块绘制为背景
+4. 背景必须是实际的透明像素（Alpha = 0），而不是视觉图案
+5. 保持主体与原来完全一致 - 不要修改、重绘或增强任何内容
+6. 输出尺寸必须与输入尺寸完全一致
+7. 保留主体的每一个像素，不作任何更改
 
-WRONG: Drawing a checkerboard pattern behind the subject
-CORRECT: Setting background pixels to transparent (alpha channel = 0)
+错误做法：在主体后面绘制棋盘格图案
+正确做法：将背景像素设置为透明（Alpha 通道 = 0）
 
-This is for sprite animation - any modification will break the animation.
-Just cut out the subject with pixel-perfect accuracy and set background to true transparency.`;
+这是用于精灵图动画的 - 任何修改都会破坏动画。
+只需以像素级的精度抠出主体，并将背景设置为真正的透明。`;
 
 export interface ModelOption {
   value: string;

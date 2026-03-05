@@ -5,6 +5,7 @@ import BatchPanel from './sidebar/BatchPanel';
 import OutputPanel from './sidebar/OutputPanel';
 import ControlsPanel from './sidebar/ControlsPanel';
 import DownloadPanel from './sidebar/DownloadPanel';
+import VideoPanel from './sidebar/VideoPanel';
 
 interface SidebarProps {
   onStart: () => void;
@@ -17,6 +18,7 @@ export default function Sidebar({ onStart }: SidebarProps) {
       <ApiPanel />
       <PromptPanel />
       <BatchPanel />
+      <VideoPanel />
       <OutputPanel />
       <ControlsPanel onStart={onStart} />
       <DownloadPanel />

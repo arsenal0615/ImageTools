@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { readFileAsDataURL, getImageDimensions, enforceOriginalDimensions, applyOutputSettings } from '../utils/image';
 import { callGeminiAPI } from '../utils/gemini';
+import { extractFramesFromVideo } from '../utils/video';
 import { loadSettings, saveApiKey, saveModel, savePrompt, removePrompt } from '../utils/storage';
 import { DEFAULT_PROMPT } from '../constants';
 import JSZip from 'jszip';
@@ -72,6 +73,7 @@ const initialState: AppState = {
     customHeight: '',
     lockRatio: true,
     scalePercent: 100,
+    videoFps: 10,
   },
   images: [],
   results: new Map(),
@@ -203,8 +205,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (key === 'prompt') savePrompt(value as string);
   }, []);
 
+  const showToast = useCallback((message: string, type: ToastItem['type'] = 'info') => {
+    const id = Date.now() + Math.random().toString(36).slice(2, 9);
+    dispatch({ type: 'ADD_TOAST', id, message, toastType: type });
+    setTimeout(() => dispatch({ type: 'REMOVE_TOAST', id }), 3000);
+  }, []);
+
   const addFiles = useCallback(async (files: File[]) => {
     for (const file of files) {
+      if (file.type.startsWith('video/')) {
+        showToast('正在解析视频，请稍候...', 'info');
+        try {
+          const frames = await extractFramesFromVideo(file, state.settings.videoFps);
+          showToast(`视频解析完成，共提取 ${frames.length} 帧`, 'success');
+          for (const frame of frames) {
+            const id = Date.now() + Math.random().toString(36).slice(2, 11);
+            const data = await readFileAsDataURL(frame);
+            const { width, height } = await getImageDimensions(data);
+            dispatch({
+              type: 'ADD_IMAGE',
+              payload: { id, file: frame, name: frame.name, data, width, height, status: 'pending' },
+            });
+          }
+        } catch (err) {
+          showToast('视频解析失败', 'error');
+        }
+        continue;
+      }
+
       if (!file.type.startsWith('image/')) continue;
       const id = Date.now() + Math.random().toString(36).slice(2, 11);
       const data = await readFileAsDataURL(file);
@@ -214,7 +242,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         payload: { id, file, name: file.name, data, width, height, status: 'pending' },
       });
     }
-  }, []);
+  }, [state.settings.videoFps, showToast]);
 
   const removeImage = useCallback((id: string) => {
     dispatch({ type: 'REMOVE_IMAGE', payload: id });
@@ -328,12 +356,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setSequencePlaying = useCallback((playing: boolean) => {
     dispatch({ type: 'SET_SEQUENCE_PLAYING', payload: playing });
-  }, []);
-
-  const showToast = useCallback((message: string, type: ToastItem['type'] = 'info') => {
-    const id = Date.now() + Math.random().toString(36).slice(2, 9);
-    dispatch({ type: 'ADD_TOAST', id, message, toastType: type });
-    setTimeout(() => dispatch({ type: 'REMOVE_TOAST', id }), 3000);
   }, []);
 
   const resetPromptToDefault = useCallback(() => {

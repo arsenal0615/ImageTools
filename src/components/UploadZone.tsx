@@ -28,7 +28,7 @@ export default function UploadZone() {
     const files = items
       .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile())
-      .filter((file): file is File => file != null && file.type.startsWith('image/'));
+      .filter((file): file is File => file != null && (file.type.startsWith('image/') || file.type.startsWith('video/')));
     addFiles(files);
   };
 
@@ -44,13 +44,13 @@ export default function UploadZone() {
       onKeyDown={(e) => e.key === 'Enter' && handleClick()}
     >
       <div className="upload-icon">📁</div>
-      <h3>拖拽图片到这里，或点击选择</h3>
-      <p>支持 JPG、PNG、WebP、GIF 等常见格式，可多选</p>
+      <h3>拖拽图片或视频到这里，或点击选择</h3>
+      <p>支持 JPG、PNG、WebP、GIF 以及 MP4 等视频格式，可多选</p>
       <input
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/*,video/*"
         onChange={handleChange}
         style={{ display: 'none' }}
       />
