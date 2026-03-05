@@ -31,9 +31,18 @@
 
 ### 1. 安装依赖
 
+在项目目录下执行：
+
 ```bash
 npm install
 ```
+
+若终端提示 **「npm 无法识别」**，请先运行一次（任选其一）：
+
+- **双击** 项目里的 **`fix-npm-path.cmd`**
+- 或在终端执行：`.\fix-npm-path.cmd`
+
+脚本会把 Node 永久加入当前用户的 PATH。**完成后关掉当前终端，重新打开一个**，再执行 `npm install`、`npm run dev` 即可正常使用 `npm`。
 
 ### 2. 配置 API Key
 
@@ -47,9 +56,16 @@ VITE_GEMINI_API_KEY=你的_Gemini_API_Key
 
 ### 3. 启动开发服务器
 
+在项目目录下执行：
+
 ```bash
 npm run dev
 ```
+
+若终端提示找不到 `npm` 或「禁止运行脚本」：
+
+- **推荐**：在 PowerShell 或 CMD 中执行 **`.\run-dev.cmd`**（.cmd 不受执行策略限制，并会自动查找 Node）
+- 或直接**双击**项目根目录的 `run-dev.cmd`
 
 浏览器访问 **http://localhost:5173**。
 
