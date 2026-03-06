@@ -113,7 +113,7 @@ export async function callGeminiAPI({
       },
     ],
     generationConfig: {
-      responseModalities: ['TEXT', 'IMAGE'],
+      responseModalities: ['IMAGE'],
     },
   };
 

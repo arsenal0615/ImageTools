@@ -28,7 +28,9 @@ export const TRANSPARENT_PROMPT = `移除此图像的背景。
 正确做法：将背景像素设置为透明（Alpha 通道 = 0）
 
 这是用于精灵图动画的 - 任何修改都会破坏动画。
-只需以像素级的精度抠出主体，并将背景设置为真正的透明。`;
+只需以像素级的精度抠出主体，并将背景设置为真正的透明。
+
+【重要】禁止在输出图像上绘制、书写或显示任何文字、说明、标签或提示词内容。只输出纯图像（透明背景），不要有任何文字叠加。`;
 
 export const PROMPT_PRESETS = [
   { id: 'greenscreen', label: '绿幕模式（推荐）', prompt: DEFAULT_PROMPT },
