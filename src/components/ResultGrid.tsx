@@ -6,8 +6,12 @@ export default function ResultGrid() {
   const { state, retryImage, setPreviewCompare } = useApp();
   const { images, results } = state;
 
-  const completed = images.filter((img) => results.has(img.id));
-  if (completed.length === 0) {
+  // 显示有结果的图片，或者正在处理中的图片（重试时）
+  const visibleImages = images.filter((img) => 
+    results.has(img.id) || img.status === 'processing'
+  );
+  
+  if (visibleImages.length === 0) {
     return (
       <div className="empty-state">
         <div className="icon">✨</div>
@@ -20,23 +24,27 @@ export default function ResultGrid() {
     <div className="image-grid">
       {images.map((img) => {
         const result = results.get(img.id);
-        if (!result) return null;
+        const isRetrying = img.status === 'processing' && !result;
+        
+        // 只显示有结果的或正在重试的
+        if (!result && !isRetrying) return null;
+        
         return (
           <ImageCard
             key={img.id}
             type="result"
             image={img}
-            result={result}
-            onPreview={() => setPreviewCompare({ original: img.data, result })}
+            result={result || img.data} // 重试时显示原图作为占位
+            onPreview={result ? () => setPreviewCompare({ original: img.data, result }) : undefined}
             onRetry={() => retryImage(img.id)}
-            onDownload={() => {
+            onDownload={result ? () => {
               const a = document.createElement('a');
               const baseName = img.name.replace(/\.[^/.]+$/, '');
               a.download = `${baseName}_nobg.png`;
               a.href = result;
               a.click();
-            }}
-            onCheckTransparency={() => {
+            } : undefined}
+            onCheckTransparency={result ? () => {
               checkTransparencyDataUrl(result).then((data) => {
                 const total = data.totalPixels;
                 const tp = ((data.transparentPixels / total) * 100).toFixed(1);
@@ -46,7 +54,7 @@ export default function ResultGrid() {
                 const msg = `【${img.name} 透明度分析】\n尺寸: ${data.width}×${data.height}\n完全透明: ${tp}%\n半透明: ${sp}%\n不透明: ${op}%\n四角: ${cornerOk ? '✅ 完全透明' : '⚠️ 部分不透明'}\n${Number(tp) > 30 ? '✅ 背景已移除' : '⚠️ 可能存在残留背景'}`;
                 alert(msg);
               });
-            }}
+            } : undefined}
           />
         );
       })}

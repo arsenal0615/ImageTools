@@ -27,7 +27,7 @@ export default function ImageCard({
   const isProcessing = image.status === 'processing';
 
   return (
-    <div className="image-card">
+    <div className={`image-card ${isProcessing ? 'is-processing' : ''}`}>
       <div
         className="thumb-container"
         style={
@@ -37,7 +37,7 @@ export default function ImageCard({
         }
       >
         <img src={isSource ? image.data : result ?? ''} alt={image.name} />
-        {isSource && isProcessing && (
+        {isProcessing && (
           <div className="processing-overlay">
             <div className="spinner" />
           </div>
@@ -45,6 +45,9 @@ export default function ImageCard({
       </div>
       {isSource && statusText != null && (
         <span className={`status status-${image.status}`}>{statusText}</span>
+      )}
+      {!isSource && isProcessing && (
+        <span className="status status-processing">处理中...</span>
       )}
       <div className="actions">
         {onRemove && (
@@ -57,7 +60,7 @@ export default function ImageCard({
             🔄
           </button>
         )}
-        {!isSource && (
+        {!isSource && !isProcessing && (
           <>
             {onPreview && (
               <button
@@ -107,7 +110,11 @@ export default function ImageCard({
           {image.name}
         </div>
         <div className="dimensions">
-          {isSource ? `${image.width} × ${image.height}` : '抠图完成'}
+          {isSource 
+            ? `${image.width} × ${image.height}` 
+            : isProcessing 
+              ? '重新处理中...' 
+              : '抠图完成'}
         </div>
       </div>
     </div>

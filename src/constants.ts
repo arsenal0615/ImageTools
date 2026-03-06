@@ -1,4 +1,18 @@
-export const DEFAULT_PROMPT = `移除此图像的背景。
+export const DEFAULT_PROMPT = `移除此图像的背景，将背景替换为纯绿色（#00FF00 绿幕）。
+
+非常重要 - 请仔细阅读：
+
+1. 将背景替换为纯绿色 #00FF00（标准绿幕色），不要使用透明或棋盘格
+2. 主体边缘需要自然过渡，保持轻微的边缘羽化效果
+3. 保持主体与原来完全一致 - 不要修改、重绘或增强主体内容
+4. 输出尺寸必须与输入尺寸完全一致
+5. 保留主体的每一个像素，不作任何更改
+6. 确保绿幕颜色均匀一致，便于后期处理
+
+这是用于精灵图动画的绿幕抠图 - 任何对主体的修改都会破坏动画。
+只需以像素级的精度保留主体，并将背景设置为纯绿色 #00FF00。`;
+
+export const TRANSPARENT_PROMPT = `移除此图像的背景。
 
 非常重要 - 请仔细阅读：
 
@@ -15,6 +29,11 @@ export const DEFAULT_PROMPT = `移除此图像的背景。
 
 这是用于精灵图动画的 - 任何修改都会破坏动画。
 只需以像素级的精度抠出主体，并将背景设置为真正的透明。`;
+
+export const PROMPT_PRESETS = [
+  { id: 'greenscreen', label: '绿幕模式（推荐）', prompt: DEFAULT_PROMPT },
+  { id: 'transparent', label: '透明背景模式', prompt: TRANSPARENT_PROMPT },
+] as const;
 
 export interface ModelOption {
   value: string;

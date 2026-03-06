@@ -10,10 +10,12 @@ import {
 import { readFileAsDataURL, getImageDimensions, enforceOriginalDimensions, applyOutputSettings } from '../utils/image';
 import { callGeminiAPI } from '../utils/gemini';
 import { extractFramesFromVideo } from '../utils/video';
+import { processGreenScreen, DEFAULT_GREEN_SCREEN_SETTINGS } from '../utils/greenScreen';
 import { loadSettings, saveApiKey, saveModel, savePrompt, removePrompt } from '../utils/storage';
 import { DEFAULT_PROMPT } from '../constants';
 import JSZip from 'jszip';
-import type { AppState, Settings, ImageItem, ToastItem } from '../types';
+import type { AppState, Settings, ImageItem, ToastItem, GreenScreenSettings, SmartColorState, ColorRecommendation } from '../types';
+import { analyzeImageColors, generatePromptWithColor, DEFAULT_COLOR_ANALYSIS_PROMPT_TEXT } from '../utils/colorAnalysis';
 
 type AppAction =
   | { type: 'LOAD_SETTINGS' }
@@ -36,7 +38,16 @@ type AppAction =
   | { type: 'SET_ACTIVE_TAB'; payload: AppState['activeTab'] }
   | { type: 'SET_PREVIEW_COMPARE'; payload: AppState['previewCompare'] }
   | { type: 'ADD_TOAST'; id: string; message: string; toastType: ToastItem['type'] }
-  | { type: 'REMOVE_TOAST'; id: string };
+  | { type: 'REMOVE_TOAST'; id: string }
+  | { type: 'SET_GREEN_SCREEN_SETTINGS'; payload: Partial<GreenScreenSettings> }
+  | { type: 'SET_POST_PROCESSED_RESULT'; id: string; dataUrl: string }
+  | { type: 'DELETE_POST_PROCESSED_RESULT'; id: string }
+  | { type: 'CLEAR_POST_PROCESSED_RESULTS' }
+  | { type: 'SET_POST_PROCESSING'; payload: boolean }
+  | { type: 'SET_POST_PROCESS_PROGRESS'; payload: number }
+  | { type: 'SET_SMART_COLOR'; payload: Partial<SmartColorState> }
+  | { type: 'SET_SMART_COLOR_RECOMMENDATION'; payload: { recommendation: ColorRecommendation; analysis: string; sourceImageId: string } }
+  | { type: 'CLEAR_SMART_COLOR' };
 
 export interface AppContextValue {
   state: AppState;
@@ -57,6 +68,14 @@ export interface AppContextValue {
   showToast: (message: string, type?: ToastItem['type']) => void;
   resetPromptToDefault: () => void;
   downloadAll: () => Promise<void>;
+  setGreenScreenSettings: (settings: Partial<GreenScreenSettings>) => void;
+  applyPostProcessing: () => Promise<void>;
+  downloadPostProcessed: () => Promise<void>;
+  analyzeSmartColor: (imageId?: string) => Promise<void>;
+  applySmartColor: () => void;
+  clearSmartColor: () => void;
+  setSmartColorPrompt: (prompt: string) => void;
+  setSmartColorEnabled: (enabled: boolean) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -77,6 +96,7 @@ const initialState: AppState = {
   },
   images: [],
   results: new Map(),
+  postProcessedResults: new Map(),
   processing: false,
   paused: false,
   cancelled: false,
@@ -88,6 +108,17 @@ const initialState: AppState = {
   activeTab: 'source',
   previewCompare: null,
   toasts: [],
+  greenScreenSettings: DEFAULT_GREEN_SCREEN_SETTINGS,
+  postProcessing: false,
+  postProcessProgress: 0,
+  smartColor: {
+    enabled: false,
+    analyzing: false,
+    recommendation: null,
+    analysis: '',
+    customPrompt: DEFAULT_COLOR_ANALYSIS_PROMPT_TEXT,
+    sourceImageId: null,
+  },
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -160,10 +191,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         images: [],
         results: new Map(),
+        postProcessedResults: new Map(),
         completed: 0,
         failed: 0,
         currentFrame: 0,
         previewCompare: null,
+        postProcessProgress: 0,
       };
     case 'SET_SEQUENCE_PLAYING':
       return { ...state, sequencePlaying: action.payload };
@@ -180,6 +213,51 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     case 'REMOVE_TOAST':
       return { ...state, toasts: state.toasts.filter((t) => t.id !== action.id) };
+    case 'SET_GREEN_SCREEN_SETTINGS':
+      return {
+        ...state,
+        greenScreenSettings: { ...state.greenScreenSettings, ...action.payload },
+      };
+    case 'SET_POST_PROCESSED_RESULT': {
+      const postProcessedResults = new Map(state.postProcessedResults);
+      postProcessedResults.set(action.id, action.dataUrl);
+      return { ...state, postProcessedResults };
+    }
+    case 'DELETE_POST_PROCESSED_RESULT': {
+      const postProcessedResults = new Map(state.postProcessedResults);
+      postProcessedResults.delete(action.id);
+      return { ...state, postProcessedResults };
+    }
+    case 'CLEAR_POST_PROCESSED_RESULTS':
+      return { ...state, postProcessedResults: new Map(), postProcessProgress: 0 };
+    case 'SET_POST_PROCESSING':
+      return { ...state, postProcessing: action.payload };
+    case 'SET_POST_PROCESS_PROGRESS':
+      return { ...state, postProcessProgress: action.payload };
+    case 'SET_SMART_COLOR':
+      return { ...state, smartColor: { ...state.smartColor, ...action.payload } };
+    case 'SET_SMART_COLOR_RECOMMENDATION':
+      return {
+        ...state,
+        smartColor: {
+          ...state.smartColor,
+          recommendation: action.payload.recommendation,
+          analysis: action.payload.analysis,
+          sourceImageId: action.payload.sourceImageId,
+          analyzing: false,
+        },
+      };
+    case 'CLEAR_SMART_COLOR':
+      return {
+        ...state,
+        smartColor: {
+          ...state.smartColor,
+          enabled: false,
+          recommendation: null,
+          analysis: '',
+          sourceImageId: null,
+        },
+      };
     default:
       return state;
   }
@@ -255,7 +333,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     cancelledRef.current = false;
     pausedRef.current = false;
-    dispatch({ type: 'RESET_PROGRESS' });
+    
+    // 只在首次开始时重置进度（没有任何处理中/已完成/失败的图片时）
+    const hasAnyProcessed = state.images.some(
+      (img) => img.status === 'success' || img.status === 'error'
+    );
+    if (!hasAnyProcessed) {
+      dispatch({ type: 'RESET_PROGRESS' });
+    }
+    
     dispatch({ type: 'SET_PROCESSING', payload: true });
 
     const pending = state.images.filter((img) => img.status === 'pending' || img.status === 'error');
@@ -285,7 +371,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           dispatch({ type: 'SET_IMAGE_STATUS', id: img.id, status: 'error' });
           dispatch({ type: 'INC_FAILED' });
-          return;
+          // 继续处理下一张，不要停止整个流程
+          console.error(`图片 ${img.name} 处理失败:`, err);
+          continue;
         }
       }
     };
@@ -316,10 +404,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       const img = state.images.find((i) => i.id === id);
       if (!img || img.status === 'processing') return;
+      
+      // 清除旧的结果和后处理结果
       if (state.results.has(id)) dispatch({ type: 'DELETE_RESULT', id });
+      if (state.postProcessedResults.has(id)) dispatch({ type: 'DELETE_POST_PROCESSED_RESULT', id });
+      
       dispatch({ type: 'SET_IMAGE_STATUS', id, status: 'pending' });
       const { apiKey, model, prompt } = state.settings;
-      if (!apiKey?.trim()) return;
+      if (!apiKey?.trim()) {
+        showToast('请先设置 API Key', 'error');
+        return;
+      }
+      
+      showToast(`正在重新处理: ${img.name}`, 'info');
+      
       try {
         dispatch({ type: 'SET_IMAGE_STATUS', id, status: 'processing' });
         const result = await callGeminiAPI({
@@ -334,12 +432,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_RESULT', id, dataUrl: processed });
         dispatch({ type: 'SET_IMAGE_STATUS', id, status: 'success' });
         dispatch({ type: 'INC_COMPLETED' });
+        showToast(`重新处理完成: ${img.name}`, 'success');
       } catch {
         dispatch({ type: 'SET_IMAGE_STATUS', id, status: 'error' });
         dispatch({ type: 'INC_FAILED' });
+        showToast(`处理失败: ${img.name}`, 'error');
       }
     },
-    [state.images, state.results, state.settings]
+    [state.images, state.results, state.postProcessedResults, state.settings, showToast]
   );
 
   const setActiveTab = useCallback((tab: AppState['activeTab']) => {
@@ -383,6 +483,143 @@ export function AppProvider({ children }: { children: ReactNode }) {
     URL.revokeObjectURL(url);
   }, [state.images, state.results]);
 
+  const setGreenScreenSettings = useCallback((settings: Partial<GreenScreenSettings>) => {
+    dispatch({ type: 'SET_GREEN_SCREEN_SETTINGS', payload: settings });
+  }, []);
+
+  const applyPostProcessing = useCallback(async () => {
+    if (state.results.size === 0) {
+      showToast('没有可处理的结果图片', 'warning');
+      return;
+    }
+
+    dispatch({ type: 'CLEAR_POST_PROCESSED_RESULTS' });
+    dispatch({ type: 'SET_POST_PROCESSING', payload: true });
+
+    const entries = Array.from(state.results.entries());
+    let processed = 0;
+
+    for (const [id, dataUrl] of entries) {
+      try {
+        const result = await processGreenScreen(dataUrl, state.greenScreenSettings);
+        dispatch({ type: 'SET_POST_PROCESSED_RESULT', id, dataUrl: result });
+        processed++;
+        dispatch({ type: 'SET_POST_PROCESS_PROGRESS', payload: Math.round((processed / entries.length) * 100) });
+      } catch (err) {
+        console.error('后处理失败:', err);
+      }
+    }
+
+    dispatch({ type: 'SET_POST_PROCESSING', payload: false });
+    showToast(`后处理完成！共处理 ${processed} 张图片`, 'success');
+  }, [state.results, state.greenScreenSettings, showToast]);
+
+  const downloadPostProcessed = useCallback(async () => {
+    if (state.postProcessedResults.size === 0) return;
+    const zip = new JSZip();
+    state.images.forEach((original) => {
+      const dataUrl = state.postProcessedResults.get(original.id);
+      if (dataUrl && original) {
+        const baseName = original.name.replace(/\.[^/.]+$/, '');
+        const base64 = dataUrl.split(',')[1];
+        zip.file(`${baseName}_processed.png`, base64, { base64: true });
+      }
+    });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = `后处理结果_${new Date().toISOString().slice(0, 10)}.zip`;
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [state.images, state.postProcessedResults]);
+
+  // AI 智能选色功能
+  const analyzeSmartColor = useCallback(async (imageId?: string) => {
+    const { apiKey, model } = state.settings;
+    if (!apiKey?.trim()) {
+      showToast('请先设置 API Key', 'error');
+      return;
+    }
+
+    // 选择要分析的图片
+    let targetImage = imageId 
+      ? state.images.find(img => img.id === imageId)
+      : state.images[0];
+    
+    if (!targetImage) {
+      showToast('请先上传图片', 'warning');
+      return;
+    }
+
+    dispatch({ type: 'SET_SMART_COLOR', payload: { analyzing: true } });
+    showToast(`正在分析图片颜色: ${targetImage.name}`, 'info');
+
+    try {
+      const result = await analyzeImageColors(
+        apiKey.trim(),
+        model,
+        targetImage.data,
+        targetImage.file.type,
+        state.smartColor.customPrompt || undefined
+      );
+
+      dispatch({
+        type: 'SET_SMART_COLOR_RECOMMENDATION',
+        payload: {
+          recommendation: result.bestChoice,
+          analysis: result.analysis,
+          sourceImageId: targetImage.id,
+        },
+      });
+
+      showToast(`推荐使用 ${result.bestChoice.colorName} (${result.bestChoice.color})`, 'success');
+    } catch (err) {
+      dispatch({ type: 'SET_SMART_COLOR', payload: { analyzing: false } });
+      showToast(`颜色分析失败: ${err instanceof Error ? err.message : '未知错误'}`, 'error');
+    }
+  }, [state.settings, state.images, state.smartColor.customPrompt, showToast]);
+
+  const applySmartColor = useCallback(() => {
+    const { recommendation } = state.smartColor;
+    if (!recommendation) {
+      showToast('请先进行颜色分析', 'warning');
+      return;
+    }
+
+    // 更新提示词
+    const newPrompt = generatePromptWithColor(recommendation.color, recommendation.colorName);
+    dispatch({ type: 'SET_SETTING', key: 'prompt', value: newPrompt });
+
+    // 更新后处理颜色
+    dispatch({ type: 'SET_GREEN_SCREEN_SETTINGS', payload: { keyColor: recommendation.color } });
+
+    // 标记为已启用
+    dispatch({ type: 'SET_SMART_COLOR', payload: { enabled: true } });
+
+    showToast(`已应用推荐颜色 ${recommendation.color}`, 'success');
+  }, [state.smartColor, showToast]);
+
+  const clearSmartColor = useCallback(() => {
+    dispatch({ type: 'CLEAR_SMART_COLOR' });
+    showToast('已清除智能选色', 'info');
+  }, [showToast]);
+
+  const setSmartColorPrompt = useCallback((prompt: string) => {
+    dispatch({ type: 'SET_SMART_COLOR', payload: { customPrompt: prompt } });
+  }, []);
+
+  const setSmartColorEnabled = useCallback((enabled: boolean) => {
+    if (enabled && state.smartColor.recommendation) {
+      // 启用时应用颜色
+      const { recommendation } = state.smartColor;
+      const newPrompt = generatePromptWithColor(recommendation.color, recommendation.colorName);
+      dispatch({ type: 'SET_SETTING', key: 'prompt', value: newPrompt });
+      dispatch({ type: 'SET_GREEN_SCREEN_SETTINGS', payload: { keyColor: recommendation.color } });
+    }
+    dispatch({ type: 'SET_SMART_COLOR', payload: { enabled } });
+  }, [state.smartColor]);
+
   const value: AppContextValue = {
     state,
     dispatch,
@@ -402,6 +639,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     showToast,
     resetPromptToDefault,
     downloadAll,
+    setGreenScreenSettings,
+    applyPostProcessing,
+    downloadPostProcessed,
+    analyzeSmartColor,
+    applySmartColor,
+    clearSmartColor,
+    setSmartColorPrompt,
+    setSmartColorEnabled,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

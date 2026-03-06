@@ -1,6 +1,6 @@
-import { useApp } from '../context/AppContext';
 import ApiPanel from './sidebar/ApiPanel';
 import PromptPanel from './sidebar/PromptPanel';
+import SmartColorPanel from './sidebar/SmartColorPanel';
 import BatchPanel from './sidebar/BatchPanel';
 import OutputPanel from './sidebar/OutputPanel';
 import ControlsPanel from './sidebar/ControlsPanel';
@@ -16,6 +16,7 @@ export default function Sidebar({ onStart }: SidebarProps) {
     <aside className="sidebar">
       <h1>🎨 AI IMAGES</h1>
       <ApiPanel />
+      <SmartColorPanel />
       <PromptPanel />
       <BatchPanel />
       <VideoPanel />
